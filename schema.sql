@@ -99,12 +99,43 @@ CREATE POLICY "fetch_logs_public_read"
     USING (true);
 
 
--- ── 5. Sanity-check queries (run after applying schema) ──────────
+-- ── 5. fetch_state ──────────────────────────────────────────────
+--
+-- Single-row table that acts as a persistent cursor.
+-- cursor_date = the oldest date_published we have ever stored.
+-- /more uses this to query ArXiv for papers OLDER than cursor_date,
+-- so every /more call moves the window further back in time.
+
+CREATE TABLE IF NOT EXISTS fetch_state (
+    id          INTEGER     PRIMARY KEY DEFAULT 1,
+    cursor_date TIMESTAMPTZ,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT single_row CHECK (id = 1)
+);
+
+COMMENT ON TABLE  fetch_state             IS 'Singleton cursor row for backwards-recency /more pagination';
+COMMENT ON COLUMN fetch_state.cursor_date IS 'Oldest date_published stored so far; /more fetches papers before this';
+
+-- Seed the one allowed row so Python UPSERT always finds it
+INSERT INTO fetch_state (id, cursor_date)
+VALUES (1, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE fetch_state ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "fetch_state_public_read"
+    ON fetch_state
+    FOR SELECT
+    TO anon, authenticated
+    USING (true);
+
+
+-- ── 6. Sanity-check queries (run after applying schema) ──────────
 
 -- Verify tables exist
 SELECT table_name FROM information_schema.tables
 WHERE table_schema = 'public'
-  AND table_name IN ('papers', 'fetch_logs');
+  AND table_name IN ('papers', 'fetch_logs', 'fetch_state');
 
 -- Verify indexes exist
 SELECT indexname, tablename, indexdef
@@ -115,4 +146,4 @@ ORDER BY tablename, indexname;
 -- Verify RLS is enabled
 SELECT tablename, rowsecurity
 FROM pg_tables
-WHERE tablename IN ('papers', 'fetch_logs');
+WHERE tablename IN ('papers', 'fetch_logs', 'fetch_state');
