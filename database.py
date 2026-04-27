@@ -1,7 +1,8 @@
 import os
 import logging
-from datetime import datetime, date, timezone
-from typing import List, Dict, Optional
+from collections import Counter
+from datetime import datetime, date, timedelta, timezone
+from typing import List, Dict, Optional, Tuple
 
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -20,6 +21,8 @@ def get_client() -> Client:
         _client = create_client(url, key)
     return _client
 
+
+# ── Core paper operations ─────────────────────────────────────────────────────
 
 def paper_exists(arxiv_id: str) -> bool:
     result = get_client().table("papers").select("arxiv_id").eq("arxiv_id", arxiv_id).execute()
@@ -44,6 +47,7 @@ def store_paper(paper: Dict) -> bool:
             "key_contributions": paper.get("key_contributions", ""),
             "code_example":      paper.get("code_example", ""),
             "topics":            paper.get("topics", []),
+            "relevance_score":   paper.get("relevance_score"),
         }).execute()
         return True
     except Exception as exc:
@@ -83,6 +87,88 @@ def search_papers(keyword: str) -> List[Dict]:
     return result.data
 
 
+# ── /ask search ───────────────────────────────────────────────────────────────
+
+def search_for_ask(question: str, limit: int = 8) -> List[Dict]:
+    """
+    Broad keyword search for the /ask command.
+    Extracts up to 3 meaningful words from the question and OR-searches
+    title + plain_summary for each, returning the most relevant results.
+    """
+    _STOPWORDS = {
+        "the", "and", "for", "are", "was", "what", "how", "why", "does",
+        "did", "can", "about", "with", "that", "this", "have", "has",
+        "been", "from", "which", "when", "where", "who", "will", "would",
+    }
+    words = [
+        w.strip("?.,!;:")
+        for w in question.lower().split()
+        if len(w.strip("?.,!;:")) >= 3 and w.strip("?.,!;:") not in _STOPWORDS
+    ][:3]
+
+    if not words:
+        words = [question[:40].strip()]
+
+    # Build one OR clause covering all keywords across title and summary
+    conditions = ",".join(
+        f"title.ilike.%{w}%,plain_summary.ilike.%{w}%"
+        for w in words
+    )
+
+    result = (
+        get_client()
+        .table("papers")
+        .select("arxiv_id,title,link,plain_summary,topics,date_published,relevance_score")
+        .or_(conditions)
+        .order("relevance_score", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return result.data
+
+
+# ── Weekly digest ─────────────────────────────────────────────────────────────
+
+def get_weekly_top_papers(n: int = 5, days: int = 7) -> List[Dict]:
+    """Return top N papers from the past `days` days, ordered by relevance_score."""
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    result = (
+        get_client()
+        .table("papers")
+        .select("arxiv_id,title,link,plain_summary,topics,relevance_score,date_published")
+        .gte("date_fetched", since)
+        .order("relevance_score", desc=True)
+        .limit(n)
+        .execute()
+    )
+    return result.data
+
+
+# ── /trends ───────────────────────────────────────────────────────────────────
+
+def get_topic_trends(days: int = 7) -> Tuple[List[Tuple[str, int]], int]:
+    """
+    Count topic frequency across papers fetched in the last `days` days.
+    Returns ([(topic, count), ...] sorted descending, total_papers).
+    """
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    result = (
+        get_client()
+        .table("papers")
+        .select("topics")
+        .gte("date_fetched", since)
+        .execute()
+    )
+    counter: Counter = Counter()
+    for row in result.data:
+        for topic in (row.get("topics") or []):
+            if topic:
+                counter[topic] += 1
+    return counter.most_common(10), len(result.data)
+
+
+# ── Cursor ────────────────────────────────────────────────────────────────────
+
 def get_cursor_date() -> Optional[datetime]:
     """Return the oldest date_published we have ever stored, or None."""
     try:
@@ -104,29 +190,26 @@ def get_cursor_date() -> Optional[datetime]:
 
 
 def update_cursor_date(dt: datetime) -> None:
-    """
-    Move the cursor backward to `dt` if `dt` is older than the current cursor.
-    The cursor only ever moves to earlier dates — it represents the furthest
-    back in time we have fetched.
-    """
+    """Move the cursor backward to `dt` only if `dt` is older than the current cursor."""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
 
     current = get_cursor_date()
     if current is not None and current <= dt:
-        # Current cursor is already at or before dt — nothing to do.
-        return
+        return  # current cursor is already at or before dt
 
     try:
         get_client().table("fetch_state").upsert({
-            "id":           1,
-            "cursor_date":  dt.isoformat(),
-            "updated_at":   datetime.now(timezone.utc).isoformat(),
+            "id":          1,
+            "cursor_date": dt.isoformat(),
+            "updated_at":  datetime.now(timezone.utc).isoformat(),
         }).execute()
         logger.info("Cursor updated to %s", dt.strftime("%Y-%m-%d %H:%M UTC"))
     except Exception as exc:
         logger.error("Failed to update cursor_date: %s", exc)
 
+
+# ── Audit log ─────────────────────────────────────────────────────────────────
 
 def log_fetch_run(papers_fetched: int, triggered_by: str) -> None:
     try:

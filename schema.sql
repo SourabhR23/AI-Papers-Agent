@@ -130,12 +130,32 @@ CREATE POLICY "fetch_state_public_read"
     USING (true);
 
 
--- ── 6. Sanity-check queries (run after applying schema) ──────────
+-- ── 7. Migration — add relevance_score to papers ────────────────
+--
+-- Run this block if you applied the original schema.sql before this
+-- column existed. It is safe to run even if the column already exists.
 
--- Verify tables exist
+ALTER TABLE papers
+    ADD COLUMN IF NOT EXISTS relevance_score INTEGER
+        CHECK (relevance_score BETWEEN 1 AND 10);
+
+COMMENT ON COLUMN papers.relevance_score IS
+    'GPT-4o topic relevance score 1–10; papers scoring 7+ are sent to Telegram';
+
+-- Index used by weekly digest (top papers by score this week)
+CREATE INDEX IF NOT EXISTS idx_papers_relevance_score
+    ON papers (relevance_score DESC NULLS LAST);
+
+
+-- ── 8. Sanity-check queries (run after applying schema) ──────────
+
+-- Verify tables + relevance_score column
 SELECT table_name FROM information_schema.tables
 WHERE table_schema = 'public'
   AND table_name IN ('papers', 'fetch_logs', 'fetch_state');
+
+SELECT column_name, data_type FROM information_schema.columns
+WHERE table_name = 'papers' AND column_name = 'relevance_score';
 
 -- Verify indexes exist
 SELECT indexname, tablename, indexdef
