@@ -56,7 +56,7 @@ async def post_shutdown(app: Application) -> None:
 def main() -> None:
     token = _require_env("TELEGRAM_BOT_TOKEN")
     _require_env("TELEGRAM_CHAT_ID")
-    _require_env("OPENAI_API_KEY")
+    _require_env("EURI_API_KEY")
     _require_env("SUPABASE_URL")
     _require_env("SUPABASE_KEY")
 

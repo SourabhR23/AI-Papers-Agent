@@ -47,7 +47,10 @@ Return only the JSON object, no extra text.
 def _get_client() -> OpenAI:
     global _client
     if _client is None:
-        _client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+        _client = OpenAI(
+            api_key=os.environ["EURI_API_KEY"],
+            base_url="https://api.euron.one/api/v1/euri",
+        )
     return _client
 
 
