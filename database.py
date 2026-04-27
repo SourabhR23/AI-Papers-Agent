@@ -83,6 +83,51 @@ def search_papers(keyword: str) -> List[Dict]:
     return result.data
 
 
+def get_cursor_date() -> Optional[datetime]:
+    """Return the oldest date_published we have ever stored, or None."""
+    try:
+        result = (
+            get_client()
+            .table("fetch_state")
+            .select("cursor_date")
+            .eq("id", 1)
+            .execute()
+        )
+        if result.data and result.data[0].get("cursor_date"):
+            raw = result.data[0]["cursor_date"]
+            if isinstance(raw, str):
+                return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return raw
+    except Exception as exc:
+        logger.error("Failed to get cursor_date: %s", exc)
+    return None
+
+
+def update_cursor_date(dt: datetime) -> None:
+    """
+    Move the cursor backward to `dt` if `dt` is older than the current cursor.
+    The cursor only ever moves to earlier dates — it represents the furthest
+    back in time we have fetched.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    current = get_cursor_date()
+    if current is not None and current <= dt:
+        # Current cursor is already at or before dt — nothing to do.
+        return
+
+    try:
+        get_client().table("fetch_state").upsert({
+            "id":           1,
+            "cursor_date":  dt.isoformat(),
+            "updated_at":   datetime.now(timezone.utc).isoformat(),
+        }).execute()
+        logger.info("Cursor updated to %s", dt.strftime("%Y-%m-%d %H:%M UTC"))
+    except Exception as exc:
+        logger.error("Failed to update cursor_date: %s", exc)
+
+
 def log_fetch_run(papers_fetched: int, triggered_by: str) -> None:
     try:
         get_client().table("fetch_logs").insert({

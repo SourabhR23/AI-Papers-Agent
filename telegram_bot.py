@@ -7,8 +7,11 @@ from telegram import Update, Bot
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from database import get_all_stored_ids, store_paper, get_today_papers, search_papers, log_fetch_run
-from fetcher import fetch_papers
+from database import (
+    get_all_stored_ids, store_paper, get_today_papers, search_papers,
+    log_fetch_run, get_cursor_date, update_cursor_date,
+)
+from fetcher import fetch_latest, fetch_before
 from explainer import generate_explanation
 
 logger = logging.getLogger(__name__)
@@ -224,23 +227,36 @@ async def process_and_send_papers(
     return len(processed)
 
 
+# ── Cursor helper ────────────────────────────────────────────────────────────
+
+def _advance_cursor(papers: List[Dict]) -> None:
+    """Push the cursor back to the oldest date_published in this batch."""
+    dates = [p["date_published"] for p in papers if p.get("date_published")]
+    if dates:
+        update_cursor_date(min(dates))
+
+
 # ── Command handlers ──────────────────────────────────────────────────────────
 
 async def cmd_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/fetch — grab today's 4-5 newest papers, skip already stored ones."""
+    """/fetch — grab the newest 4-5 papers not already in the database."""
     chat_id = str(update.effective_chat.id)
     await update.message.reply_text("⏳ Fetching latest AI papers…")
 
     try:
-        stored_ids = get_all_stored_ids()
-        papers = fetch_papers(count=5, skip_ids=stored_ids)
+        skip_ids = set(get_all_stored_ids())
+        papers   = fetch_latest(count=5, skip_ids=skip_ids)
+
         if not papers:
             await update.message.reply_text(
-                "✅ All recent papers already sent\\. Try /more for older ones\\.",
+                "✅ All recent papers have already been fetched\\.\n"
+                "Use /more to go further back in time\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
+
         sent = await process_and_send_papers(papers, context.bot, chat_id, "command")
+        _advance_cursor(papers)
         log_fetch_run(sent, "command")
         await update.message.reply_text(
             f"✅ Sent {sent} new paper\\(s\\)\\.", parse_mode=ParseMode.MARKDOWN_V2
@@ -253,26 +269,40 @@ async def cmd_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_more(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/more — fetch 4-5 more papers going further back, skipping all stored ones."""
+    """/more — fetch 4-5 papers older than the current cursor, skipping all stored."""
     chat_id = str(update.effective_chat.id)
     await update.message.reply_text(
-        "⏳ Fetching more AI papers \\(going further back\\)…",
+        "⏳ Going further back in time for more papers…",
         parse_mode=ParseMode.MARKDOWN_V2,
     )
 
     try:
-        stored_ids = get_all_stored_ids()
-        papers = fetch_papers(count=5, skip_ids=stored_ids, max_pool=400)
-        if not papers:
+        cursor   = get_cursor_date()
+        skip_ids = set(get_all_stored_ids())
+
+        if cursor is None:
+            # No cursor yet — behave like /fetch but inform user to run /fetch first
             await update.message.reply_text(
-                "📭 No more unseen papers found in the current search window\\.",
+                "ℹ️ No fetch history found\\. Run /fetch first to establish a starting point\\.",
                 parse_mode=ParseMode.MARKDOWN_V2,
             )
             return
+
+        papers = fetch_before(cursor, count=5, skip_ids=skip_ids)
+
+        if not papers:
+            await update.message.reply_text(
+                "📭 No more unseen papers found before the current cursor\\.\n"
+                f"Cursor is at: {_mdv2(cursor.strftime('%d %b %Y %H:%M UTC'))}",
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+            return
+
         sent = await process_and_send_papers(papers, context.bot, chat_id, "command")
+        _advance_cursor(papers)
         log_fetch_run(sent, "command")
         await update.message.reply_text(
-            f"✅ Sent {sent} additional paper\\(s\\)\\.", parse_mode=ParseMode.MARKDOWN_V2
+            f"✅ Sent {sent} older paper\\(s\\)\\.", parse_mode=ParseMode.MARKDOWN_V2
         )
     except Exception as exc:
         logger.exception("Error in /more")

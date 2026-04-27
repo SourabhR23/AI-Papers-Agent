@@ -1,14 +1,15 @@
 import re
 import logging
-from typing import List, Dict, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional, Set
 
 import arxiv
 
 logger = logging.getLogger(__name__)
 
-# Broad query covering all requested topics across the main AI/ML ArXiv categories.
-# The OR structure ensures we catch papers that may not use the exact category tag.
-_QUERY = (
+# ── ArXiv query ───────────────────────────────────────────────────────────────
+
+_BASE_QUERY = (
     "(large language model OR LLM OR language model OR "
     "agent OR agentic OR multi-agent OR multiagent OR "
     "retrieval augmented generation OR RAG OR "
@@ -18,49 +19,116 @@ _QUERY = (
     "AND (cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.MA)"
 )
 
+# ArXiv API date filter — papers exist from ~2020 onward in these categories.
+# Format: YYYYMMDDhhmm (12 digits, UTC).
+_DATE_FLOOR = "202001010000"
+
+
+def _client() -> arxiv.Client:
+    return arxiv.Client(page_size=100, num_retries=3, delay_seconds=3)
+
 
 def _normalize_id(entry_id: str) -> str:
-    """Strip version suffix from an ArXiv entry ID URL."""
     short = entry_id.rstrip("/").split("/")[-1]
     return re.sub(r"v\d+$", "", short)
 
 
-def fetch_papers(
-    count: int = 5,
-    skip_ids: Optional[List[str]] = None,
-    max_pool: int = 200,
-) -> List[Dict]:
-    """Return up to `count` recent ArXiv papers not in `skip_ids`."""
-    if skip_ids is None:
-        skip_ids = []
-    skip_set = set(skip_ids)
+def _to_dict(result: arxiv.Result) -> Dict:
+    arxiv_id = _normalize_id(result.entry_id)
+    return {
+        "arxiv_id":       arxiv_id,
+        "title":          result.title.strip(),
+        "authors":        ", ".join(a.name for a in result.authors[:5]),
+        "abstract":       result.summary.replace("\n", " ").strip(),
+        "link":           f"https://arxiv.org/abs/{arxiv_id}",
+        "date_published": result.published,
+    }
 
-    client = arxiv.Client(page_size=50, num_retries=3)
+
+# ── Public fetch functions ────────────────────────────────────────────────────
+
+def fetch_latest(
+    count: int = 5,
+    skip_ids: Optional[Set[str]] = None,
+) -> List[Dict]:
+    """
+    Return the newest `count` papers not in `skip_ids`.
+
+    Scans ArXiv newest-first up to 200 results, stopping early once
+    `count` new papers are found. Used by /fetch and the daily scheduler.
+    """
+    if skip_ids is None:
+        skip_ids = set()
+
     search = arxiv.Search(
-        query=_QUERY,
-        max_results=max_pool,
+        query=_BASE_QUERY,
+        max_results=200,
         sort_by=arxiv.SortCriterion.SubmittedDate,
         sort_order=arxiv.SortOrder.Descending,
     )
 
     papers: List[Dict] = []
-    for result in client.results(search):
+    scanned = 0
+    for result in _client().results(search):
+        scanned += 1
         arxiv_id = _normalize_id(result.entry_id)
-        if arxiv_id in skip_set:
-            continue
+        if arxiv_id not in skip_ids:
+            papers.append(_to_dict(result))
+            if len(papers) >= count:
+                break
 
-        authors = [a.name for a in result.authors[:5]]
-        papers.append({
-            "arxiv_id":       arxiv_id,
-            "title":          result.title.strip(),
-            "authors":        ", ".join(authors),
-            "abstract":       result.summary.replace("\n", " ").strip(),
-            "link":           f"https://arxiv.org/abs/{arxiv_id}",
-            "date_published": result.published,
-        })
+    logger.info(
+        "fetch_latest: %d new paper(s) found (scanned %d, skip_ids=%d)",
+        len(papers), scanned, len(skip_ids),
+    )
+    return papers
 
-        if len(papers) >= count:
-            break
 
-    logger.info("Fetched %d new papers (skipped %d known IDs)", len(papers), len(skip_set))
+def fetch_before(
+    before_date: datetime,
+    count: int = 5,
+    skip_ids: Optional[Set[str]] = None,
+) -> List[Dict]:
+    """
+    Return the newest `count` papers published BEFORE `before_date` and not in
+    `skip_ids`. Uses ArXiv's submittedDate range filter so the API does the
+    heavy filtering — no need to scan past the entire recent catalogue.
+
+    The date range query format is: submittedDate:[YYYYMMDDhhmm TO YYYYMMDDhhmm]
+    """
+    if skip_ids is None:
+        skip_ids = set()
+
+    # Normalise to UTC
+    if before_date.tzinfo is None:
+        before_date = before_date.replace(tzinfo=timezone.utc)
+    cutoff = before_date.astimezone(timezone.utc)
+
+    # Subtract 1 minute so the upper bound is exclusive of the cursor instant
+    end_dt  = cutoff - timedelta(minutes=1)
+    end_str = end_dt.strftime("%Y%m%d%H%M")
+
+    date_query = f"({_BASE_QUERY}) AND submittedDate:[{_DATE_FLOOR} TO {end_str}]"
+
+    search = arxiv.Search(
+        query=date_query,
+        max_results=200,
+        sort_by=arxiv.SortCriterion.SubmittedDate,
+        sort_order=arxiv.SortOrder.Descending,
+    )
+
+    papers: List[Dict] = []
+    scanned = 0
+    for result in _client().results(search):
+        scanned += 1
+        arxiv_id = _normalize_id(result.entry_id)
+        if arxiv_id not in skip_ids:
+            papers.append(_to_dict(result))
+            if len(papers) >= count:
+                break
+
+    logger.info(
+        "fetch_before(%s): %d new paper(s) found (scanned %d)",
+        cutoff.strftime("%Y-%m-%d %H:%M UTC"), len(papers), scanned,
+    )
     return papers
