@@ -4,10 +4,9 @@ import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Bot
 
-from database import get_all_stored_ids, store_paper, log_fetch_run
+from database import get_all_stored_ids, log_fetch_run
 from fetcher import fetch_papers
-from explainer import generate_explanation
-from telegram_bot import format_paper_message, send_long_message
+from telegram_bot import process_and_send_papers
 
 logger = logging.getLogger(__name__)
 
@@ -23,36 +22,18 @@ async def daily_fetch_job(bot: Bot, chat_id: str) -> None:
         if not papers:
             await bot.send_message(
                 chat_id=chat_id,
-                text="📭 Daily fetch: no new papers found right now. Try /fetch manually later.",
+                text="📭 Daily fetch: no new papers found right now\\. Try /fetch manually later\\.",
             )
             return
 
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"🌅 Good morning! Fetching {len(papers)} new AI paper(s) for today…",
-        )
-
-        for paper in papers:
-            explanation = generate_explanation(
-                title=paper["title"],
-                abstract=paper["abstract"],
-                authors=paper.get("authors", ""),
-            )
-            paper.update(explanation)
-            store_paper(paper)
-            await send_long_message(bot, chat_id, format_paper_message(paper))
-
-        log_fetch_run(len(papers), "scheduler")
-        await bot.send_message(
-            chat_id=chat_id,
-            text=f"✅ Done! Sent {len(papers)} paper(s). Use /today to see the full list.",
-        )
-        logger.info("Daily fetch job completed — sent %d papers", len(papers))
+        sent = await process_and_send_papers(papers, bot, chat_id, triggered_by="scheduler")
+        log_fetch_run(sent, "scheduler")
+        logger.info("Daily fetch job completed — sent %d papers", sent)
 
     except Exception:
         logger.exception("Daily fetch job failed")
         try:
-            await bot.send_message(chat_id=chat_id, text="❌ Daily fetch failed. Check logs.")
+            await bot.send_message(chat_id=chat_id, text="❌ Daily fetch failed\\. Check logs\\.")
         except Exception:
             pass
 
@@ -69,6 +50,6 @@ def setup_scheduler(bot: Bot, chat_id: str) -> AsyncIOScheduler:
         id="daily_fetch",
         name="Daily AI Papers Fetch",
         replace_existing=True,
-        misfire_grace_time=3600,  # allow up to 1h late start if the process was down
+        misfire_grace_time=3600,
     )
     return scheduler
