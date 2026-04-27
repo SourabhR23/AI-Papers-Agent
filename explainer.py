@@ -82,17 +82,17 @@ def generate_explanation(
     except Exception as exc:
         logger.error("OpenAI call failed for '%s': %s", title[:60], exc)
         return {
-            "summary": abstract[:500] + "...",
-            "contributions": "• Could not generate contributions at this time.",
-            "example": "# Could not generate example at this time.",
-            "topics": [],
+            "plain_summary":     abstract[:500] + "...",
+            "key_contributions": "• Could not generate contributions at this time.",
+            "code_example":      "# Could not generate example at this time.",
+            "topics":            [],
         }
 
     return {
-        "summary": data.get("explanation", "").strip(),
-        "contributions": data.get("contributions", "").strip(),
-        "example": data.get("example", "").strip(),
-        "topics": _coerce_topics(data.get("topics", [])),
+        "plain_summary":     data.get("explanation", "").strip(),
+        "key_contributions": data.get("contributions", "").strip(),
+        "code_example":      data.get("example", "").strip(),
+        "topics":            _coerce_topics(data.get("topics", [])),
     }
 
 

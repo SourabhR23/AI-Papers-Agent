@@ -7,7 +7,7 @@ from telegram import Update, Bot
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-from database import get_all_stored_ids, store_paper, get_today_papers, search_papers
+from database import get_all_stored_ids, store_paper, get_today_papers, search_papers, log_fetch_run
 from fetcher import fetch_papers
 from explainer import generate_explanation
 
@@ -29,11 +29,11 @@ def format_paper_message(paper: Dict) -> str:
     if hasattr(pub, "strftime"):
         pub = pub.strftime("%d %b %Y")
 
-    topics_str = ", ".join(paper.get("topics", [])) or "AI Research"
-    authors_str = _esc(paper.get("authors", ""))
-    example = _esc(paper.get("example", "")).strip()
-    contributions = _esc(paper.get("contributions", "")).strip()
-    summary = _esc(paper.get("summary", "")).strip()
+    topics_str    = ", ".join(paper.get("topics", [])) or "AI Research"
+    authors_str   = _esc(paper.get("authors", ""))
+    example       = _esc(paper.get("code_example", "")).strip()
+    contributions = _esc(paper.get("key_contributions", "")).strip()
+    summary       = _esc(paper.get("plain_summary", "")).strip()
 
     message = (
         f"🔬 <b>AI Research Paper</b>\n\n"
@@ -150,6 +150,7 @@ async def cmd_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             return
         sent = await _process_and_send_papers(papers, context.bot, chat_id)
+        log_fetch_run(sent, "command")
         await update.message.reply_text(f"✅ Sent {sent} new paper(s).")
     except Exception as exc:
         logger.exception("Error in /fetch")
@@ -171,6 +172,7 @@ async def cmd_more(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             return
         sent = await _process_and_send_papers(papers, context.bot, chat_id)
+        log_fetch_run(sent, "command")
         await update.message.reply_text(f"✅ Sent {sent} additional paper(s).")
     except Exception as exc:
         logger.exception("Error in /more")

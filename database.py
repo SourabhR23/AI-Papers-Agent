@@ -22,7 +22,7 @@ def get_client() -> Client:
 
 
 def paper_exists(arxiv_id: str) -> bool:
-    result = get_client().table("papers").select("paper_id").eq("paper_id", arxiv_id).execute()
+    result = get_client().table("papers").select("arxiv_id").eq("arxiv_id", arxiv_id).execute()
     return len(result.data) > 0
 
 
@@ -33,25 +33,27 @@ def store_paper(paper: Dict) -> bool:
 
     try:
         get_client().table("papers").insert({
-            "paper_id": paper["paper_id"],
-            "title": paper["title"],
-            "authors": paper.get("authors", ""),
-            "link": paper["link"],
-            "date_published": pub_date,
-            "date_fetched": datetime.now(timezone.utc).isoformat(),
-            "summary": paper.get("summary", ""),
-            "example": paper.get("example", ""),
-            "topics": paper.get("topics", []),
+            "arxiv_id":          paper["arxiv_id"],
+            "title":             paper["title"],
+            "authors":           paper.get("authors", ""),
+            "abstract":          paper.get("abstract", ""),
+            "link":              paper["link"],
+            "date_published":    pub_date,
+            "date_fetched":      datetime.now(timezone.utc).isoformat(),
+            "plain_summary":     paper.get("plain_summary", ""),
+            "key_contributions": paper.get("key_contributions", ""),
+            "code_example":      paper.get("code_example", ""),
+            "topics":            paper.get("topics", []),
         }).execute()
         return True
     except Exception as exc:
-        logger.error("Failed to store paper %s: %s", paper.get("paper_id"), exc)
+        logger.error("Failed to store paper %s: %s", paper.get("arxiv_id"), exc)
         return False
 
 
 def get_all_stored_ids() -> List[str]:
-    result = get_client().table("papers").select("paper_id").execute()
-    return [row["paper_id"] for row in result.data]
+    result = get_client().table("papers").select("arxiv_id").execute()
+    return [row["arxiv_id"] for row in result.data]
 
 
 def get_today_papers() -> List[Dict]:
@@ -73,9 +75,20 @@ def search_papers(keyword: str) -> List[Dict]:
         get_client()
         .table("papers")
         .select("*")
-        .or_(f"title.ilike.%{kw}%,summary.ilike.%{kw}%")
+        .or_(f"title.ilike.%{kw}%,plain_summary.ilike.%{kw}%")
         .order("date_published", desc=True)
         .limit(10)
         .execute()
     )
     return result.data
+
+
+def log_fetch_run(papers_fetched: int, triggered_by: str) -> None:
+    try:
+        get_client().table("fetch_logs").insert({
+            "run_date":       datetime.now(timezone.utc).isoformat(),
+            "papers_fetched": papers_fetched,
+            "triggered_by":   triggered_by,
+        }).execute()
+    except Exception as exc:
+        logger.error("Failed to log fetch run: %s", exc)

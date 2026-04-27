@@ -51,11 +51,11 @@ def fetch_papers(
 
         authors = [a.name for a in result.authors[:5]]
         papers.append({
-            "paper_id": arxiv_id,
-            "title": result.title.strip(),
-            "authors": ", ".join(authors),
-            "abstract": result.summary.replace("\n", " ").strip(),
-            "link": f"https://arxiv.org/abs/{arxiv_id}",
+            "arxiv_id":       arxiv_id,
+            "title":          result.title.strip(),
+            "authors":        ", ".join(authors),
+            "abstract":       result.summary.replace("\n", " ").strip(),
+            "link":           f"https://arxiv.org/abs/{arxiv_id}",
             "date_published": result.published,
         })
 

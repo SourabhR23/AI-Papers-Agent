@@ -4,7 +4,7 @@ import pytz
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Bot
 
-from database import get_all_stored_ids, store_paper
+from database import get_all_stored_ids, store_paper, log_fetch_run
 from fetcher import fetch_papers
 from explainer import generate_explanation
 from telegram_bot import format_paper_message, send_long_message
@@ -42,6 +42,7 @@ async def daily_fetch_job(bot: Bot, chat_id: str) -> None:
             store_paper(paper)
             await send_long_message(bot, chat_id, format_paper_message(paper))
 
+        log_fetch_run(len(papers), "scheduler")
         await bot.send_message(
             chat_id=chat_id,
             text=f"✅ Done! Sent {len(papers)} paper(s). Use /today to see the full list.",
