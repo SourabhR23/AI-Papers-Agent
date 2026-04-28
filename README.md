@@ -2,14 +2,12 @@
 
 A fully automated Telegram bot that fetches, explains, and archives the latest
 AI research papers from ArXiv every day — powered by GPT-4o and Supabase.
-Deploy in under 15 minutes from your phone using Koyeb's free tier.
+Deploy in under 10 minutes from your phone using Koyeb's free tier.
 
 ```
-ArXiv ──► Supabase Edge Function (02:00 UTC)
-               │
-               ├─► GPT-4o Explainer (Euri API)
-               ├─► Supabase DB  (dedup · archive · search)
-               └─► Telegram Bot ──► Your Chat
+ArXiv ──► Fetcher ──► GPT-4o Explainer ──► Telegram Bot
+                            │
+                       Supabase DB  (dedup · archive · search)
 ```
 
 ---
@@ -18,7 +16,7 @@ ArXiv ──► Supabase Edge Function (02:00 UTC)
 
 | Feature | Detail |
 |---------|--------|
-| 📥 Daily fetch | 5 newest AI papers at **02:00 UTC** via Supabase Edge Function cron |
+| 📥 Daily fetch | 5 newest AI papers at **02:00 UTC** automatically via APScheduler |
 | 🧠 AI explanation | GPT-4o writes a plain-English summary, key contributions, and pseudo-code |
 | ⭐ Topic scoring | Papers scored 1–10; only those scoring 7+ are sent to Telegram |
 | 📬 Telegram delivery | Beautifully formatted MarkdownV2 messages with ArXiv links |
@@ -35,7 +33,7 @@ ArXiv ──► Supabase Edge Function (02:00 UTC)
 
 | Service | Free tier | Sign-up |
 |---------|-----------|---------|
-| **Supabase** | 500 MB database, 500K Edge Function invocations/month | supabase.com |
+| **Supabase** | 500 MB database, unlimited API calls | supabase.com |
 | **Koyeb** | 1 free nano worker instance (always-on) | koyeb.com |
 | **Telegram** | Free | t.me/botfather |
 | **Euri API** | Pay-per-use GPT-4o | euron.one |
@@ -73,13 +71,6 @@ and `fetch_state` were created.
 
 > ⚠️ Use the **service_role** key, not the anon key. The service role bypasses
 > Row Level Security and is required for the bot to write to the database.
-
-### 1.4 Note your Project Reference ID
-
-You need this for the Edge Function in Step 5.
-
-- Left sidebar → **Project Settings** → **General**
-- Copy the **Reference ID** (e.g. `abcdefghijklmnop`)
 
 ---
 
@@ -129,7 +120,7 @@ You need this for the Edge Function in Step 5.
 
 ## Step 4 — Push to GitHub
 
-Both Koyeb and Supabase CLI deploy from GitHub. Push the code first:
+Koyeb deploys from a GitHub repo. Push the code first:
 
 ```bash
 git remote set-url origin https://github.com/YOUR_USERNAME/ai-papers-agent.git
@@ -146,90 +137,13 @@ git push -u origin main
 
 ---
 
-## Step 5 — Supabase Edge Function (Daily Cron at 02:00 UTC)
+## Step 5 — Deploy to Koyeb
 
-The Edge Function runs inside Supabase's infrastructure — no extra server needed.
-It fetches, explains, scores, and sends papers automatically every night.
-
-### 5.1 Install the Supabase CLI
-
-```bash
-# macOS
-brew install supabase/tap/supabase
-
-# Windows (scoop)
-scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-scoop install supabase
-
-# Linux / manual
-curl -s https://raw.githubusercontent.com/supabase/cli/main/scripts/install.sh | bash
-```
-
-### 5.2 Link your project
-
-```bash
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF   # from Step 1.4
-```
-
-### 5.3 Update config.toml
-
-Open `supabase/config.toml` and replace `YOUR_PROJECT_REF` with your actual
-Reference ID from Step 1.4.
-
-### 5.4 Set Edge Function secrets
-
-The Edge Function needs all five environment variables. Set them as Supabase secrets:
-
-```bash
-supabase secrets set EURI_API_KEY=your_euri_key
-supabase secrets set TELEGRAM_BOT_TOKEN=123456789:ABCdef...
-supabase secrets set TELEGRAM_CHAT_ID=-1001234567890
-supabase secrets set SUPABASE_URL=https://your-ref.supabase.co
-supabase secrets set SUPABASE_KEY=eyJ...your_service_role_key...
-```
-
-> ℹ️ `SUPABASE_URL` and `SUPABASE_KEY` are automatically available inside Edge
-> Functions if you use the built-in Supabase client — but setting them
-> explicitly as secrets makes the function portable and self-documenting.
-
-### 5.5 Deploy the Edge Function
-
-```bash
-supabase functions deploy daily-fetch
-```
-
-Verify it appears in the dashboard:
-**Supabase Dashboard → Edge Functions → daily-fetch**
-
-The cron schedule (`0 2 * * *`) is read from `supabase/config.toml` and
-activated automatically on deploy. You can confirm it under
-**Edge Functions → daily-fetch → Schedule**.
-
-### 5.6 Test the Edge Function manually
-
-Trigger a one-shot invocation from the CLI (optional but recommended):
-
-```bash
-supabase functions invoke daily-fetch
-```
-
-Or hit it from the Supabase dashboard: **Edge Functions → daily-fetch → Invoke**.
-
----
-
-## Step 6 — Deploy the Bot to Koyeb
-
-The Telegram bot (polling mode) runs as a persistent worker on Koyeb.
-It handles all user commands (`/fetch`, `/more`, `/ask`, `/trends`, etc.)
-and sends the weekly digest every Sunday — but the daily fetch is fully
-delegated to the Edge Function above.
-
-### 6.1 Create a Koyeb account
+### 5.1 Create a Koyeb account
 
 Go to **koyeb.com** → sign up (GitHub login recommended).
 
-### 6.2 Create a new App
+### 5.2 Create a new App
 
 1. Click **Create App**
 2. Select **GitHub** as the deployment source
@@ -242,7 +156,7 @@ Go to **koyeb.com** → sign up (GitHub login recommended).
 7. Under **Instance type**: select **Nano** (free tier)
 8. Under **Regions**: pick one close to you (e.g. `was` for Washington DC)
 
-### 6.3 Set environment variables
+### 5.3 Set environment variables
 
 In the Koyeb service settings → **Environment variables**, add all five:
 
@@ -256,7 +170,7 @@ In the Koyeb service settings → **Environment variables**, add all five:
 
 Mark each as **Secret** so the value is masked in logs.
 
-### 6.4 Deploy
+### 5.4 Deploy
 
 Click **Deploy**. Koyeb builds the Docker image and starts the bot.
 
@@ -264,24 +178,26 @@ A successful deploy shows in the **Logs** tab:
 
 ```
 Starting AI Papers Agent…
-APScheduler started — weekly digest scheduled for Sunday 09:00 UTC
+APScheduler started — daily fetch 02:00 UTC, weekly digest Sunday 09:00 UTC
 ```
 
 The bot is now live 🎉
 
-### 6.5 Using koyeb.yaml (optional)
+### 5.5 Using koyeb.yaml (optional CLI deploy)
 
-The repo includes `koyeb.yaml` for CLI-based deployments. After installing the
-Koyeb CLI (`curl -sf https://raw.githubusercontent.com/koyeb/koyeb-cli/main/install.sh | sh`):
+The repo includes `koyeb.yaml` for CLI-based deployments.
+After installing the Koyeb CLI:
 
 ```bash
+curl -sf https://raw.githubusercontent.com/koyeb/koyeb-cli/main/install.sh | sh
+
 # Edit koyeb.yaml: replace YOUR_USERNAME with your GitHub username
 koyeb app init ai-papers-agent --manifest koyeb.yaml
 ```
 
 ---
 
-## Step 7 — Test everything
+## Step 6 — Test everything
 
 ### Quick test from your machine
 
@@ -305,7 +221,6 @@ Expected output when everything is working:
 ```
 ══════════════════════════════════════════════════════════
   AI Papers Agent — Integration Tests
-  2026-04-28 09:00:00
 ══════════════════════════════════════════════════════════
 
   1. Environment Variables       PASS
@@ -342,30 +257,6 @@ python test_run.py --skip-send
 
 ---
 
-## Architecture
-
-```
-┌──────────────────────────────────────┐
-│  Supabase Edge Function              │  ← runs at 02:00 UTC every day
-│  supabase/functions/daily-fetch/     │
-│    1. GET arxiv papers (ArXiv API)   │
-│    2. POST Euri API → GPT-4o score   │
-│    3. INSERT into Supabase papers    │
-│    4. Advance /more cursor           │
-│    5. Send 7+ scored papers via TG   │
-└──────────────────┬───────────────────┘
-                   │ Supabase DB (shared)
-┌──────────────────▼───────────────────┐
-│  Koyeb Worker (python main.py)       │  ← always running
-│    - Telegram polling loop           │
-│    - /fetch /more /today /search     │
-│    - /ask /trends                    │
-│    - APScheduler: Sunday digest      │
-└──────────────────────────────────────┘
-```
-
----
-
 ## How deduplication and cursor work
 
 ```
@@ -378,7 +269,7 @@ python test_run.py --skip-send
               └─► update cursor = oldest date_published in new batch
 ```
 
-The Edge Function and the `/fetch` command both update the same cursor.
+The automatic daily fetch and the `/fetch` command both update the same cursor.
 Every call to `/more` moves the cursor further back in time — you will never
 receive the same paper twice.
 
@@ -394,30 +285,24 @@ cp .env.example .env   # fill in your five values
 # Verify all connections
 python test_run.py
 
-# Run the bot locally (handles /fetch, /more, etc.)
+# Run the bot locally
 python main.py
 ```
 
 The bot starts polling immediately. Trigger a manual fetch with `/fetch` in
-Telegram. The automatic daily job fires at **02:00 UTC** via the Edge Function.
+Telegram. The automatic daily job fires at **02:00 UTC**.
 
 ---
 
 ## Project Structure
 
 ```
-├── main.py           Entry point — bot + APScheduler (weekly digest)
+├── main.py           Entry point — bot + APScheduler
 ├── fetcher.py        ArXiv search with dedup & date-cursor logic
 ├── explainer.py      GPT-4o explanation, contributions, pseudo-code, scoring
 ├── telegram_bot.py   MarkdownV2 formatting + all command handlers
 ├── database.py       Supabase CRUD + cursor read/write
-├── scheduler.py      Weekly digest job (Sunday 09:00 UTC)
-│
-├── supabase/
-│   ├── config.toml                     Cron schedule for Edge Function
-│   └── functions/
-│       └── daily-fetch/
-│           └── index.ts                Daily fetch Edge Function (02:00 UTC)
+├── scheduler.py      Daily 02:00 UTC job + Sunday 09:00 UTC weekly digest
 │
 ├── test_run.py       Integration test suite (run before deploying)
 ├── schema.sql        Full Supabase schema — paste into SQL Editor
@@ -439,11 +324,6 @@ Telegram. The automatic daily job fires at **02:00 UTC** via the Edge Function.
 | `SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
 | `SUPABASE_KEY` | Supabase → Project Settings → API → service_role key |
 
-Set these in:
-- **Local dev**: `.env` file (copied from `.env.example`)
-- **Koyeb**: Service settings → Environment variables (mark as Secret)
-- **Supabase Edge Function**: `supabase secrets set KEY=value`
-
 ---
 
 ## Troubleshooting
@@ -461,18 +341,14 @@ Set these in:
 - Verify `EURI_API_KEY` is valid at euron.one dashboard
 - Run `python test_run.py --skip-send` to isolate the failing step
 
-**Edge Function not running automatically**
-- Confirm `supabase/config.toml` has `schedule = "0 2 * * *"` under `[functions.daily-fetch]`
-- Re-deploy with `supabase functions deploy daily-fetch` after editing config
-- Check Dashboard → Edge Functions → daily-fetch → Logs
-
-**Edge Function secrets missing**
-- Run `supabase secrets list` to see what's set
-- Re-run `supabase secrets set KEY=value` for any missing variables
-
 **`/more` says "no cursor found, run /fetch first"**
 - Expected — run `/fetch` at least once to establish the starting cursor
 
 **Koyeb build fails**
 - Check that `Dockerfile` and `requirements.txt` are committed and pushed
 - Koyeb logs show the exact pip or Docker build error
+
+**Daily fetch not running**
+- The bot must be running on Koyeb (worker must be healthy) for APScheduler to fire
+- Check Koyeb → Logs for `Daily fetch job started` at 02:00 UTC
+- If the worker restarted around 02:00 UTC the job may have been missed — use `/fetch` manually

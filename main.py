@@ -35,7 +35,7 @@ async def post_init(app: Application) -> None:
     scheduler = setup_scheduler(app.bot, chat_id)
     scheduler.start()
     app.bot_data["scheduler"] = scheduler
-    logger.info("APScheduler started — weekly digest scheduled for Sunday 09:00 UTC")
+    logger.info("APScheduler started — daily fetch 02:00 UTC, weekly digest Sunday 09:00 UTC")
 
     await app.bot.set_my_commands([
         ("start",  "Show help and available commands"),
