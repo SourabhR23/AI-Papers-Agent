@@ -94,7 +94,7 @@ def generate_explanation(
 
     try:
         response = _get_client().chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1-nano",
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
@@ -151,7 +151,7 @@ def answer_question(question: str, papers: List[Dict]) -> str:
 
     try:
         response = _get_client().chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1-nano",
             messages=[
                 {"role": "system", "content": _ASK_SYSTEM},
                 {"role": "user", "content": prompt},
