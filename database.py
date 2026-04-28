@@ -209,6 +209,71 @@ def update_cursor_date(dt: datetime) -> None:
         logger.error("Failed to update cursor_date: %s", exc)
 
 
+# ── Telegram offset ───────────────────────────────────────────────────────────
+
+def get_telegram_offset() -> int:
+    """Return last processed Telegram update_id + 1, or 0 on first run."""
+    try:
+        result = (
+            get_client()
+            .table("fetch_state")
+            .select("telegram_offset")
+            .eq("id", 1)
+            .execute()
+        )
+        if result.data and result.data[0].get("telegram_offset") is not None:
+            return int(result.data[0]["telegram_offset"])
+    except Exception as exc:
+        logger.error("Failed to get telegram_offset: %s", exc)
+    return 0
+
+
+def set_telegram_offset(offset: int) -> None:
+    """Persist the Telegram update offset so the next poll skips processed updates."""
+    try:
+        get_client().table("fetch_state").upsert({
+            "id":               1,
+            "telegram_offset":  offset,
+            "updated_at":       datetime.now(timezone.utc).isoformat(),
+        }).execute()
+        logger.info("telegram_offset set to %d", offset)
+    except Exception as exc:
+        logger.error("Failed to set telegram_offset: %s", exc)
+
+
+# ── Status ────────────────────────────────────────────────────────────────────
+
+def get_status() -> Dict:
+    """Return total stored paper count and the most recent fetch_logs row."""
+    total = 0
+    try:
+        result = (
+            get_client()
+            .table("papers")
+            .select("arxiv_id", count="exact")
+            .execute()
+        )
+        total = result.count or 0
+    except Exception as exc:
+        logger.error("Failed to count papers: %s", exc)
+
+    last_run = None
+    try:
+        result = (
+            get_client()
+            .table("fetch_logs")
+            .select("run_date,papers_fetched,triggered_by")
+            .order("run_date", desc=True)
+            .limit(1)
+            .execute()
+        )
+        last_run = result.data[0] if result.data else None
+    except Exception as exc:
+        logger.error("Failed to get last fetch run: %s", exc)
+
+    return {"total": total, "last_run": last_run}
+
+
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 def log_fetch_run(papers_fetched: int, triggered_by: str) -> None:

@@ -1,0 +1,33 @@
+name: Telegram Poll
+
+# Runs every 5 minutes. Checks Telegram getUpdates for new commands
+# sent to the bot, executes any found, then exits.
+# offset is persisted in Supabase so each update is processed exactly once.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4      # must finish before the next 5-min run starts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Check for commands
+        env:
+          EURI_API_KEY:       ${{ secrets.EURI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUPABASE_URL:       ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:       ${{ secrets.SUPABASE_KEY }}
+        run: python poll.py

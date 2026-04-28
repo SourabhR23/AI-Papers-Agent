@@ -147,7 +147,20 @@ CREATE INDEX IF NOT EXISTS idx_papers_relevance_score
     ON papers (relevance_score DESC NULLS LAST);
 
 
--- ── 8. Sanity-check queries (run after applying schema) ──────────
+-- ── 8. Migration — add telegram_offset to fetch_state ──────────────
+--
+-- Stores the last Telegram update_id processed by poll.py so every
+-- message is handled exactly once across GitHub Actions runs.
+-- Safe to run even if the column already exists.
+
+ALTER TABLE fetch_state
+    ADD COLUMN IF NOT EXISTS telegram_offset BIGINT NOT NULL DEFAULT 0;
+
+COMMENT ON COLUMN fetch_state.telegram_offset IS
+    'Last Telegram update_id seen + 1; used by poll.py for deduplication';
+
+
+-- ── 9. Sanity-check queries (run after applying schema) ──────────
 
 -- Verify tables + relevance_score column
 SELECT table_name FROM information_schema.tables
