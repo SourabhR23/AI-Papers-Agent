@@ -26,9 +26,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 15 minutes: covers the 5-min cron interval plus typical GitHub Actions queuing lag.
+# 2 hours: GitHub Actions free tier can delay cron jobs by 20–60+ minutes.
 # Commands older than this are marked seen but not executed.
-MAX_AGE_SECONDS = 15 * 60
+MAX_AGE_SECONDS = 2 * 60 * 60
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ from explainer import generate_explanation, answer_question
 logger = logging.getLogger(__name__)
 
 MAX_MSG_LEN = 4096
-_SCORE_THRESHOLD = 3 #papers below this score are stored but not sent
+_SCORE_THRESHOLD = 3  # papers below this score are stored but not sent
 
 
 # ── MarkdownV2 escape helpers ─────────────────────────────────────────────────
@@ -336,8 +336,11 @@ async def process_and_send_papers(
     # Advance cursor regardless of score filter
     _advance_cursor(processed)
 
-    # Phase 2: filter by relevance score
-    to_send = [p for p in processed if (p.get("relevance_score") or 0) >= _SCORE_THRESHOLD]
+    # Phase 2: filter by relevance score; None score (API failure) → always send
+    to_send = [
+        p for p in processed
+        if p.get("relevance_score") is None or p.get("relevance_score", 0) >= _SCORE_THRESHOLD
+    ]
     low_count = len(processed) - len(to_send)
 
     if low_count:
@@ -347,11 +350,12 @@ async def process_and_send_papers(
         )
 
     if not to_send:
+        scores = [str(p.get("relevance_score") or "?") for p in processed]
         await bot.send_message(
             chat_id=chat_id,
             text=(
                 f"📦 Stored {len(processed)} paper\\(s\\) but none scored "
-                f"{_SCORE_THRESHOLD}\\+ for relevance to LLMs/agents/RAG/reasoning\\.\n"
+                f"{_SCORE_THRESHOLD}\\+ \\(scores: {_mdv2(', '.join(scores))}\\)\\.\n"
                 "Try /more to look at older papers\\."
             ),
             parse_mode=ParseMode.MARKDOWN_V2,
