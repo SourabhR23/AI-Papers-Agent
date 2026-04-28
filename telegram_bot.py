@@ -18,7 +18,7 @@ from explainer import generate_explanation, answer_question
 logger = logging.getLogger(__name__)
 
 MAX_MSG_LEN = 4096
-_SCORE_THRESHOLD = 7  # papers below this score are stored but not sent
+_SCORE_THRESHOLD = 3 #papers below this score are stored but not sent
 
 
 # ── MarkdownV2 escape helpers ─────────────────────────────────────────────────
