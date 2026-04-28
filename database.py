@@ -224,7 +224,7 @@ def get_telegram_offset() -> int:
         if result.data and result.data[0].get("telegram_offset") is not None:
             return int(result.data[0]["telegram_offset"])
     except Exception as exc:
-        logger.error("Failed to get telegram_offset: %s", exc)
+        _log_schema_hint("get telegram_offset", exc)
     return 0
 
 
@@ -238,7 +238,20 @@ def set_telegram_offset(offset: int) -> None:
         }).execute()
         logger.info("telegram_offset set to %d", offset)
     except Exception as exc:
-        logger.error("Failed to set telegram_offset: %s", exc)
+        _log_schema_hint("set telegram_offset", exc)
+
+
+def _log_schema_hint(operation: str, exc: Exception) -> None:
+    """Log a schema-missing error with a clear fix instruction."""
+    err = str(exc).lower()
+    if "fetch_state" in err or "does not exist" in err or "42p01" in err:
+        logger.error(
+            "%s failed — fetch_state table or telegram_offset column is missing. "
+            "Run schema.sql section 8 in the Supabase SQL Editor. (%s)",
+            operation, exc,
+        )
+    else:
+        logger.error("%s failed: %s", operation, exc)
 
 
 # ── Status ────────────────────────────────────────────────────────────────────

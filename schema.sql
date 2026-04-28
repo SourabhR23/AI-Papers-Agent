@@ -151,7 +151,24 @@ CREATE INDEX IF NOT EXISTS idx_papers_relevance_score
 --
 -- Stores the last Telegram update_id processed by poll.py so every
 -- message is handled exactly once across GitHub Actions runs.
--- Safe to run even if the column already exists.
+--
+-- This block is fully self-contained: safe to run on a fresh database
+-- (where fetch_state does not yet exist) AND safe to run as an upgrade
+-- on an existing installation. Every statement is idempotent.
+
+CREATE TABLE IF NOT EXISTS fetch_state (
+    id          INTEGER     PRIMARY KEY DEFAULT 1,
+    cursor_date TIMESTAMPTZ,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT single_row CHECK (id = 1)
+);
+
+-- Ensure the one required row exists
+INSERT INTO fetch_state (id, cursor_date)
+VALUES (1, NULL)
+ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE fetch_state ENABLE ROW LEVEL SECURITY;
 
 ALTER TABLE fetch_state
     ADD COLUMN IF NOT EXISTS telegram_offset BIGINT NOT NULL DEFAULT 0;
