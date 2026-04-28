@@ -35,14 +35,16 @@ async def post_init(app: Application) -> None:
     scheduler = setup_scheduler(app.bot, chat_id)
     scheduler.start()
     app.bot_data["scheduler"] = scheduler
-    logger.info("APScheduler started — daily fetch job scheduled for 08:00 UTC")
+    logger.info("APScheduler started — weekly digest scheduled for Sunday 09:00 UTC")
 
     await app.bot.set_my_commands([
         ("start",  "Show help and available commands"),
-        ("fetch",  "Fetch today's 4-5 newest AI papers"),
-        ("more",   "Fetch 4-5 more papers (going further back)"),
+        ("fetch",  "Fetch the 4-5 newest AI papers"),
+        ("more",   "Fetch 4-5 older papers (goes further back each time)"),
         ("today",  "List papers already fetched today"),
         ("search", "Search stored papers by keyword"),
+        ("ask",    "Ask a question answered from stored papers"),
+        ("trends", "Show trending AI topics this week"),
     ])
 
 
